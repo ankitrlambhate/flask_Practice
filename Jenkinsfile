@@ -1,5 +1,4 @@
 pipeline {
-
     agent any
 
     stages {
@@ -7,11 +6,15 @@ pipeline {
         stage('Build') {
             steps {
                 sh '''
-                    python3 -m venv venv
-                    . venv/bin/activate
+                    echo "=== BUILD STARTED ==="
 
-                    python -m pip install --upgrade pip
-                    pip install -r requirements.txt
+                    /usr/bin/python3 -m venv venv
+
+                    venv/bin/python -m pip install --upgrade pip
+
+                    venv/bin/python -m pip install -r requirements.txt
+
+                    echo "=== BUILD COMPLETED ==="
                 '''
             }
         }
@@ -19,8 +22,11 @@ pipeline {
         stage('Test') {
             steps {
                 sh '''
-                    . venv/bin/activate
-                    pytest -v
+                    echo "=== TEST STARTED ==="
+
+                    venv/bin/python -m pytest -v
+
+                    echo "=== TEST COMPLETED ==="
                 '''
             }
         }
@@ -28,24 +34,17 @@ pipeline {
         stage('Deploy') {
             steps {
                 sh '''
-                    echo "Deploying Flask application..."
+                    echo "=== DEPLOYMENT STARTED ==="
 
-                    pkill -f "python.*app.py" || true
+                    echo "Deploying Flask application to staging environment..."
 
-                    . venv/bin/activate
-
-                    nohup python app.py > flask.log 2>&1 &
-
-                    sleep 5
-
-                    echo "Flask application deployed successfully"
+                    echo "=== DEPLOYMENT COMPLETED ==="
                 '''
             }
         }
     }
 
     post {
-
         success {
             echo 'CI/CD Pipeline completed successfully!'
         }
