@@ -68,11 +68,11 @@ pipeline {
 
                 withCredentials([
                     string(
-                        credentialsId: 'mongo-uri',
+                        credentialsId: 'ankit-mongo-uri',
                         variable: 'MONGO_URI'
                     ),
                     string(
-                        credentialsId: 'secret-key',
+                        credentialsId: 'ankit-secret-key',
                         variable: 'SECRET_KEY'
                     )
                 ]) {
