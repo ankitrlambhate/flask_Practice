@@ -1,285 +1,211 @@
 pipeline {
-    agent any
-
-    environment {
-        PYTHONPATH = "${WORKSPACE}/python_packages"
-    }
-
-    stages {
-
-        stage('Build') {
-            steps {
-                echo 'Building Flask application...'
-
-                sh '''
-                    set -e
-
-                    echo "======================================"
-                    echo "Python Environment"
-                    echo "======================================"
-
-                    whoami
-                    python3 --version
-                    which python3
-
-                    echo ""
-                    echo "Creating Python package directory..."
-
-                    rm -rf "$WORKSPACE/python_packages"
-                    mkdir -p "$WORKSPACE/python_packages"
-
-                    echo ""
-                    echo "Installing dependencies..."
-
-                    if [ -f requirements.txt ]; then
-                        echo "requirements.txt found."
-                        python3 -m pip install \
-                            --target="$WORKSPACE/python_packages" \
-                            -r requirements.txt
-                    else
-                        echo "requirements.txt not found."
-                        echo "Installing Flask and pytest..."
-
-                        python3 -m pip install \
-                            --target="$WORKSPACE/python_packages" \
-                            Flask pytest
-                    fi
-
-                    echo ""
-                    echo "Installed packages:"
-                    ls "$WORKSPACE/python_packages" | head -30
-
-                    echo ""
-                    echo "Testing Flask import..."
-
-                    PYTHONPATH="$WORKSPACE/python_packages" \
-                        python3 -c "import flask; print('Flask:', flask.__version__)"
-
-                    echo ""
-                    echo "Build completed successfully."
-                '''
-            }
-        }
-
-        stage('Test') {
-            steps {
-                echo 'Running tests...'
-
-                sh '''
-                    set -e
-
-                    export PYTHONPATH="$WORKSPACE/python_packages"
-
-                    echo "Python version:"
-                    python3 --version
-
-                    echo ""
-                    echo "Checking for tests..."
-
-                    if [ -d tests ]; then
-
-                        echo "tests directory found."
-                        python3 -m pytest -v
-
-                    elif ls test_*.py >/dev/null 2>&1; then
-
-                        echo "Test files found."
-                        python3 -m pytest -v
-
-                    else
-
-                        echo "No pytest test files found."
-                        echo "Running Flask application syntax check..."
-
-                        if [ -f app.py ]; then
-
-                            python3 -m py_compile app.py
-                            echo "app.py syntax check passed."
-
-                        elif [ -f application.py ]; then
-
-                            python3 -m py_compile application.py
-                            echo "application.py syntax check passed."
-
-                        else
-
-                            echo "ERROR: No Flask application file found."
-                            exit 1
-
-                        fi
-                    fi
-
-                    echo ""
-                    echo "Test stage completed successfully."
-                '''
-            }
-        }
-
-        stage('Deploy') {
-            steps {
-                echo 'Deploying application to staging environment...'
-
-                sh '''
-                    set -e
-
-                    export PYTHONPATH="$WORKSPACE/python_packages"
-
-                    echo "======================================"
-                    echo "Deploying Flask Application"
-                    echo "======================================"
-
-                    # Stop previous Flask process
-                    if [ -f "$WORKSPACE/flask.pid" ]; then
-
-                        echo "Stopping previous Flask process..."
-
-                        kill "$(cat "$WORKSPACE/flask.pid")" 2>/dev/null || true
-
-                        rm -f "$WORKSPACE/flask.pid"
-                    fi
-
-                    # Check application file
-                    if [ ! -f app.py ]; then
-
-                        echo "ERROR: app.py not found."
-                        exit 1
-
-                    fi
-
-                    export FLASK_APP=app.py
-
-                    echo "Starting Flask application..."
-
-                    nohup python3 -m flask run \
-                        --host=0.0.0.0 \
-                        --port=5000 \
-                        > "$WORKSPACE/flask.log" 2>&1 &
-
-                    FLASK_PID=$!
-
-                    echo "$FLASK_PID" > "$WORKSPACE/flask.pid"
-
-                    echo "Flask PID: $FLASK_PID"
-
-                    echo ""
-                    echo "Waiting for Flask application..."
-                    sleep 5
-
-                    echo ""
-                    echo "Flask logs:"
-                    cat "$WORKSPACE/flask.log" || true
-
-                    echo ""
-                    echo "Deployment completed."
-                '''
-            }
-        }
-
-        stage('Verify Deployment') {
-            steps {
-                echo 'Verifying staging deployment...'
-
-                sh '''
-                    set -e
-
-                    echo "Waiting for application..."
-                    sleep 3
-
-                    echo ""
-                    echo "Testing http://localhost:5000..."
-
-                    if curl -f http://localhost:5000; then
-
-                        echo ""
-                        echo "======================================"
-                        echo "Deployment verification SUCCESS"
-                        echo "======================================"
-
-                    else
-
-                        echo ""
-                        echo "======================================"
-                        echo "Deployment verification FAILED"
-                        echo "======================================"
-
-                        echo ""
-                        echo "Flask application logs:"
-                        tail -30 "$WORKSPACE/flask.log" || true
-
-                        exit 1
-
-                    fi
-                '''
-            }
+agent any
+
+environment {
+    PYTHON_PACKAGES = "${WORKSPACE}/python_packages"
+    PATH = "${WORKSPACE}/python_packages/bin:${env.PATH}"
+}
+
+stages {
+
+    stage('Checkout') {
+        steps {
+            echo 'Checking out source code...'
+            checkout scm
         }
     }
 
-    post {
+    stage('Build') {
+        steps {
+            echo 'Building Flask application...'
 
-        success {
-            echo '======================================'
-            echo 'Pipeline completed successfully!'
-            echo '======================================'
+            sh """
+                set -e
 
-            mail to: 'lambhate.ankit@gmail.com',
-                 subject: "Jenkins Pipeline SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                 body: """Hello Ankit,
+                echo "Python version:"
+                python3 --version
 
-The Jenkins pipeline completed successfully.
+                echo "Python location:"
+                which python3
 
-Job: ${env.JOB_NAME}
-Build: #${env.BUILD_NUMBER}
-Status: SUCCESS
+                echo "Cleaning previous build..."
+                rm -rf "${PYTHON_PACKAGES}"
+                mkdir -p "${PYTHON_PACKAGES}"
 
-Stages completed:
-- Build
-- Test
-- Deploy
-- Verify Deployment
+                echo "Installing dependencies..."
 
-The Flask application was successfully deployed to the staging environment.
-
-Please check Jenkins for the complete build details.
-"""
-        }
-
-        failure {
-            echo '======================================'
-            echo 'Pipeline FAILED!'
-            echo '======================================'
-
-            mail to: 'lambhate.ankit@gmail.com',
-                 subject: "Jenkins Pipeline FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                 body: """Hello Ankit,
-
-The Jenkins pipeline has FAILED.
-
-Job: ${env.JOB_NAME}
-Build: #${env.BUILD_NUMBER}
-Status: FAILURE
-
-Please check the Jenkins console output for the exact failure.
-
-Regards,
-Jenkins
-"""
-        }
-
-        always {
-            echo 'Pipeline execution finished.'
-
-            sh '''
-                if [ -f "$WORKSPACE/flask.pid" ]; then
-
-                    echo "Cleaning up Flask application..."
-
-                    kill "$(cat "$WORKSPACE/flask.pid")" 2>/dev/null || true
-
-                    rm -f "$WORKSPACE/flask.pid"
-
+                if [ -f requirements.txt ]; then
+                    python3 -m pip install --target="${PYTHON_PACKAGES}" -r requirements.txt
+                else
+                    echo "ERROR: requirements.txt not found"
+                    exit 1
                 fi
-            '''
+
+                echo "Verifying Flask installation..."
+
+                PYTHONPATH="${PYTHON_PACKAGES}" python3 -c "import flask; print('Flask version:', flask.__version__)"
+
+                echo "Build completed successfully."
+            """
+        }
+    }
+
+    stage('Test') {
+        steps {
+            echo 'Running tests...'
+
+            sh """
+                set -e
+
+                export PYTHONPATH="${PYTHON_PACKAGES}"
+
+                echo "Python version:"
+                python3 --version
+
+                echo "Checking for project tests..."
+
+                if [ -d tests ]; then
+                    echo "tests/ directory found."
+                    python3 -m pytest tests/ -v
+
+                elif [ -f test_app.py ]; then
+                    echo "test_app.py found."
+                    python3 -m pytest test_app.py -v
+
+                elif ls test_*.py >/dev/null 2>&1; then
+                    echo "Project test files found."
+                    python3 -m pytest test_*.py -v
+
+                else
+                    echo "No pytest tests found."
+                    echo "Running Python syntax check..."
+
+                    if [ -f app.py ]; then
+                        python3 -m py_compile app.py
+                        echo "app.py syntax check passed."
+
+                    elif [ -f application.py ]; then
+                        python3 -m py_compile application.py
+                        echo "application.py syntax check passed."
+
+                    else
+                        echo "ERROR: No Flask application file found."
+                        exit 1
+                    fi
+                fi
+
+                echo "Tests completed successfully."
+            """
+        }
+    }
+
+    stage('Deploy') {
+        steps {
+            echo 'Deploying Flask application...'
+
+            sh """
+                set -e
+
+                export PYTHONPATH="${PYTHON_PACKAGES}"
+
+                if [ -f flask.pid ]; then
+                    OLD_PID=\$(cat flask.pid)
+
+                    if kill -0 "\$OLD_PID" 2>/dev/null; then
+                        echo "Stopping existing Flask process: \$OLD_PID"
+                        kill "\$OLD_PID" || true
+                        sleep 2
+                    fi
+
+                    rm -f flask.pid
+                fi
+
+                echo "Starting Flask application..."
+
+                export FLASK_APP=app.py
+
+                nohup python3 -m flask run --host=0.0.0.0 --port=5000 > flask.log 2>&1 &
+
+                FLASK_PID=\$!
+                echo "\$FLASK_PID" > flask.pid
+
+                echo "Flask PID: \$FLASK_PID"
+
+                sleep 5
+
+                if kill -0 "\$FLASK_PID" 2>/dev/null; then
+                    echo "Flask process is running."
+                else
+                    echo "ERROR: Flask process stopped."
+                    cat flask.log
+                    exit 1
+                fi
+
+                echo "Flask application started successfully."
+            """
+        }
+    }
+
+    stage('Verify Deployment') {
+        steps {
+            echo 'Verifying deployment...'
+
+            sh """
+                set -e
+
+                sleep 3
+
+                echo "Checking http://localhost:5000 ..."
+
+                if curl -f --max-time 10 http://localhost:5000; then
+                    echo "Application is running successfully!"
+                else
+                    echo "Application verification failed."
+                    echo "Last 30 lines of flask.log:"
+                    tail -30 flask.log || true
+                    exit 1
+                fi
+            """
         }
     }
 }
 
+post {
+
+    success {
+        echo 'Pipeline completed successfully!'
+
+        mail(
+            to: 'lambhate.ankit@gmail.com',
+            subject: "Jenkins Pipeline SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+            body: "The Flask application was built, tested, deployed and verified successfully."
+        )
+    }
+
+    failure {
+        echo 'Pipeline failed!'
+
+        mail(
+            to: 'lambhate.ankit@gmail.com',
+            subject: "Jenkins Pipeline FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+            body: "The Jenkins pipeline failed. Please check the Jenkins console output."
+        )
+    }
+
+    always {
+        echo 'Pipeline execution finished.'
+
+        sh """
+            if [ -f flask.pid ]; then
+                PID=\$(cat flask.pid)
+
+                if kill -0 "\$PID" 2>/dev/null; then
+                    echo "Flask process is still running: \$PID"
+                else
+                    echo "Flask process is not running."
+                fi
+            fi
+        """
+    }
+}
+}
