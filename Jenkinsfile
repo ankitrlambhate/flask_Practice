@@ -17,39 +17,27 @@ pipeline {
         stage('Build') {
             steps {
                 echo 'Creating Python virtual environment...'
-
-                // Install python3-venv package if not available (for Debian/Ubuntu systems)
-                // This assumes the jenkins user has sudo privileges or the package is pre-installed
                 sh '''
-                    # Test if venv actually works by trying to create a test environment
+                    # Test if venv module works
                     if python3 -m venv /tmp/test_venv >/dev/null 2>&1; then
                         echo "Virtual environment module is working correctly"
                         rm -rf /tmp/test_venv
+                        VENV_METHOD="python3 -m venv"
                     else
-                        echo "Virtual environment module is not working, attempting to install python3-venv package..."
-                        # Update package list and install python3-venv for Python 3.12
-                        # Adjust the version if needed (e.g., python3.11-venv, python3.10-venv)
-                        if [ "$(whoami)" = "root" ] || sudo -n true 2>/dev/null; then
-                            # We have sudo access (either root or passwordless sudo)
-                            sudo apt-get update && sudo apt-get install -y python3.12-venv
+                        # Try to install virtualenv via pip (user)
+                        echo "Built-in venv module not working. Attempting to install virtualenv via pip..."
+                        if pip3 install --user virtualenv >/dev/null 2>&1; then
+                            echo "virtualenv installed successfully"
+                            VENV_METHOD="python3 -m virtualenv"
                         else
-                            # We might need to ask for password (not ideal in Jenkins, but let's try)
-                            echo "WARNING: Jenkins user may not have sudo privileges. Attempting installation anyway..."
-                            sudo apt-get update && sudo apt-get install -y python3.12-venv
-                        fi
-
-                        # Verify installation worked
-                        if ! python3 -m venv /tmp/test_venv >/dev/null 2>&1; then
-                            echo "ERROR: Failed to install python3-venv package or venv still not working"
+                            echo "ERROR: Failed to install virtualenv. Cannot create virtual environment."
                             exit 1
                         fi
-                        rm -rf /tmp/test_venv
-                        echo "Successfully installed and verified python3-venv package"
                     fi
-                '''
 
-                sh '''
-                    python3 -m venv "$VENV"
+                    # Create the virtual environment for the build
+                    echo "Creating virtual environment at $VENV using $VENV_METHOD"
+                    $VENV_METHOD "$VENV"
 
                     . "$VENV/bin/activate"
 
