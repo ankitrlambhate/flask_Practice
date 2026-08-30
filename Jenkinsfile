@@ -2,9 +2,6 @@
       agent any
 
       environment {
-          // Python installation
-          PYTHON = tool 'Python 3'
-          // Virtual environment path
           VENV = "${WORKSPACE}/venv"
       }
 
