@@ -21,11 +21,30 @@ pipeline {
                 // Install python3-venv package if not available (for Debian/Ubuntu systems)
                 // This assumes the jenkins user has sudo privileges or the package is pre-installed
                 sh '''
-                    if ! python3 -m venv --help >/dev/null 2>&1; then
-                        echo "python3-venv package not found, package not found, attempting to install..."
+                    # Test if venv actually works by trying to create a test environment
+                    if python3 -m venv /tmp/test_venv >/dev/null 2>&1; then
+                        echo "Virtual environment module is working correctly"
+                        rm -rf /tmp/test_venv
+                    else
+                        echo "Virtual environment module is not working, attempting to install python3-venv package..."
                         # Update package list and install python3-venv for Python 3.12
                         # Adjust the version if needed (e.g., python3.11-venv, python3.10-venv)
-                        sudo apt-get update && sudo apt-get install -y python3.12-venv
+                        if [ "$(whoami)" = "root" ] || sudo -n true 2>/dev/null; then
+                            # We have sudo access (either root or passwordless sudo)
+                            sudo apt-get update && sudo apt-get install -y python3.12-venv
+                        else
+                            # We might need to ask for password (not ideal in Jenkins, but let's try)
+                            echo "WARNING: Jenkins user may not have sudo privileges. Attempting installation anyway..."
+                            sudo apt-get update && sudo apt-get install -y python3.12-venv
+                        fi
+
+                        # Verify installation worked
+                        if ! python3 -m venv /tmp/test_venv >/dev/null 2>&1; then
+                            echo "ERROR: Failed to install python3-venv package or venv still not working"
+                            exit 1
+                        fi
+                        rm -rf /tmp/test_venv
+                        echo "Successfully installed and verified python3-venv package"
                     fi
                 '''
 
