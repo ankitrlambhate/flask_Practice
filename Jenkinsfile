@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        VENV = "${WORKSPACE}/venv"
+        PYTHONPATH = "${WORKSPACE}/python_packages"
     }
 
     stages {
@@ -23,40 +23,37 @@ pipeline {
                     which python3
 
                     echo ""
-                    echo "Checking Python venv support..."
-                    python3 -c "import ensurepip; print('ensurepip: OK')"
-                    python3 -c "import venv; print('venv module: OK')"
+                    echo "Creating Python package directory..."
+
+                    rm -rf "$WORKSPACE/python_packages"
+                    mkdir -p "$WORKSPACE/python_packages"
 
                     echo ""
-                    echo "Creating virtual environment..."
-                    rm -rf "$VENV"
-                    python3 -m venv "$VENV"
-
-                    echo ""
-                    echo "Activating virtual environment..."
-                    . "$VENV/bin/activate"
-
-                    echo "Python:"
-                    python --version
-
-                    echo "Pip:"
-                    pip --version
-
-                    echo ""
-                    echo "Upgrading pip..."
-                    pip install --upgrade pip
-
-                    echo ""
-                    echo "Installing application dependencies..."
+                    echo "Installing dependencies..."
 
                     if [ -f requirements.txt ]; then
                         echo "requirements.txt found."
-                        pip install -r requirements.txt
+                        python3 -m pip install \
+                            --target="$WORKSPACE/python_packages" \
+                            -r requirements.txt
                     else
-                        echo "No requirements.txt found."
+                        echo "requirements.txt not found."
                         echo "Installing Flask and pytest..."
-                        pip install Flask pytest
+
+                        python3 -m pip install \
+                            --target="$WORKSPACE/python_packages" \
+                            Flask pytest
                     fi
+
+                    echo ""
+                    echo "Installed packages:"
+                    ls "$WORKSPACE/python_packages" | head -30
+
+                    echo ""
+                    echo "Testing Flask import..."
+
+                    PYTHONPATH="$WORKSPACE/python_packages" \
+                        python3 -c "import flask; print('Flask:', flask.__version__)"
 
                     echo ""
                     echo "Build completed successfully."
@@ -71,39 +68,44 @@ pipeline {
                 sh '''
                     set -e
 
-                    echo "Activating virtual environment..."
-                    . "$VENV/bin/activate"
+                    export PYTHONPATH="$WORKSPACE/python_packages"
 
-                    echo ""
                     echo "Python version:"
-                    python --version
+                    python3 --version
 
                     echo ""
                     echo "Checking for tests..."
 
                     if [ -d tests ]; then
+
                         echo "tests directory found."
-                        pytest -v
+                        python3 -m pytest -v
 
                     elif ls test_*.py >/dev/null 2>&1; then
+
                         echo "Test files found."
-                        pytest -v
+                        python3 -m pytest -v
 
                     else
+
                         echo "No pytest test files found."
                         echo "Running Flask application syntax check..."
 
                         if [ -f app.py ]; then
-                            python -m py_compile app.py
+
+                            python3 -m py_compile app.py
                             echo "app.py syntax check passed."
 
                         elif [ -f application.py ]; then
-                            python -m py_compile application.py
+
+                            python3 -m py_compile application.py
                             echo "application.py syntax check passed."
 
                         else
+
                             echo "ERROR: No Flask application file found."
                             exit 1
+
                         fi
                     fi
 
@@ -120,32 +122,35 @@ pipeline {
                 sh '''
                     set -e
 
-                    . "$VENV/bin/activate"
+                    export PYTHONPATH="$WORKSPACE/python_packages"
 
                     echo "======================================"
                     echo "Deploying Flask Application"
                     echo "======================================"
 
-                    # Stop an existing Flask process if present
+                    # Stop previous Flask process
                     if [ -f "$WORKSPACE/flask.pid" ]; then
-                        echo "Stopping previous Flask application..."
+
+                        echo "Stopping previous Flask process..."
 
                         kill "$(cat "$WORKSPACE/flask.pid")" 2>/dev/null || true
 
                         rm -f "$WORKSPACE/flask.pid"
                     fi
 
-                    # Make sure app.py exists
+                    # Check application file
                     if [ ! -f app.py ]; then
+
                         echo "ERROR: app.py not found."
                         exit 1
+
                     fi
 
                     export FLASK_APP=app.py
 
-                    echo "Starting Flask application on port 5000..."
+                    echo "Starting Flask application..."
 
-                    nohup flask run \
+                    nohup python3 -m flask run \
                         --host=0.0.0.0 \
                         --port=5000 \
                         > "$WORKSPACE/flask.log" 2>&1 &
@@ -156,11 +161,12 @@ pipeline {
 
                     echo "Flask PID: $FLASK_PID"
 
-                    echo "Waiting for application to start..."
+                    echo ""
+                    echo "Waiting for Flask application..."
                     sleep 5
 
                     echo ""
-                    echo "Flask application log:"
+                    echo "Flask logs:"
                     cat "$WORKSPACE/flask.log" || true
 
                     echo ""
@@ -179,14 +185,18 @@ pipeline {
                     echo "Waiting for application..."
                     sleep 3
 
+                    echo ""
                     echo "Testing http://localhost:5000..."
 
                     if curl -f http://localhost:5000; then
+
                         echo ""
                         echo "======================================"
                         echo "Deployment verification SUCCESS"
                         echo "======================================"
+
                     else
+
                         echo ""
                         echo "======================================"
                         echo "Deployment verification FAILED"
@@ -194,9 +204,10 @@ pipeline {
 
                         echo ""
                         echo "Flask application logs:"
-                        tail -20 "$WORKSPACE/flask.log" || true
+                        tail -30 "$WORKSPACE/flask.log" || true
 
                         exit 1
+
                     fi
                 '''
             }
@@ -249,12 +260,6 @@ Status: FAILURE
 
 Please check the Jenkins console output for the exact failure.
 
-Jenkins pipeline stages:
-- Build
-- Test
-- Deploy
-- Verify Deployment
-
 Regards,
 Jenkins
 """
@@ -265,11 +270,13 @@ Jenkins
 
             sh '''
                 if [ -f "$WORKSPACE/flask.pid" ]; then
+
                     echo "Cleaning up Flask application..."
 
                     kill "$(cat "$WORKSPACE/flask.pid")" 2>/dev/null || true
 
                     rm -f "$WORKSPACE/flask.pid"
+
                 fi
             '''
         }
