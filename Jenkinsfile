@@ -18,6 +18,17 @@ pipeline {
             steps {
                 echo 'Creating Python virtual environment...'
 
+                // Install python3-venv package if not available (for Debian/Ubuntu systems)
+                // This assumes the jenkins user has sudo privileges or the package is pre-installed
+                sh '''
+                    if ! python3 -m venv --help >/dev/null 2>&1; then
+                        echo "python3-venv package not found, package not found, attempting to install..."
+                        # Update package list and install python3-venv for Python 3.12
+                        # Adjust the version if needed (e.g., python3.11-venv, python3.10-venv)
+                        sudo apt-get update && sudo apt-get install -y python3.12-venv
+                    fi
+                '''
+
                 sh '''
                     python3 -m venv "$VENV"
 
