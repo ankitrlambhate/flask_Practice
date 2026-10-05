@@ -1,5 +1,4 @@
 pipeline {
-<<<<<<< HEAD
 
     agent any
 
@@ -59,41 +58,12 @@ pipeline {
 
                     echo ""
                     echo "Build completed successfully."
-=======
-    agent any
-
-    environment {
-        VIRTUAL_ENV = 'venv'
-        APP_DIR = "${WORKSPACE}"
-        DEPLOY_DIR = '/opt/flask_practice'
-    }
-
-    triggers {
-        githubPush()
-    }
-
-    options {
-        timestamps()
-        buildDiscarder(logRotator(numToKeepStr: '20'))
-    }
-
-    stages {
-        stage('Build') {
-            steps {
-                echo 'Installing Python dependencies...'
-                sh '''
-                    python3 -m venv venv
-                    . venv/bin/activate
-                    python -m pip install --upgrade pip
-                    pip install -r requirements.txt
->>>>>>> 1c52d8d (First Commit)
                 '''
             }
         }
 
         stage('Test') {
             steps {
-<<<<<<< HEAD
                 echo 'Running tests...'
 
                 withCredentials([
@@ -252,43 +222,12 @@ pipeline {
                         cat flask.log || true
                         exit 1
                     fi
-=======
-                echo 'Running unit tests...'
-                sh '''
-                    . venv/bin/activate
-                    pytest -q
-                '''
-            }
-        }
-
-        stage('Deploy to Staging') {
-            when {
-                branch 'main'
-            }
-            steps {
-                echo 'Deploying Flask app to staging environment...'
-                sh '''
-                    set -e
-
-                    sudo mkdir -p /opt/flask_practice
-                    sudo cp -r "${WORKSPACE}"/* /opt/flask_practice/
-                    sudo chown -R jenkins:jenkins /opt/flask_practice || true
-
-                    cd /opt/flask_practice
-                    if [ -d "venv" ]; then
-                        . venv/bin/activate
-                    fi
-
-                    nohup python app.py > /tmp/flask_practice.log 2>&1 &
-                    echo "Application started in staging mode on port 5000"
->>>>>>> 1c52d8d (First Commit)
                 '''
             }
         }
     }
 
     post {
-<<<<<<< HEAD
 
         success {
             echo '======================================'
@@ -350,19 +289,3 @@ Please check the Jenkins console output for details.
         }
     }
 }
-
-=======
-        success {
-            mail to: 'ankit@example.com',
-                 subject: "Jenkins pipeline SUCCESS: ${JOB_NAME} #${BUILD_NUMBER}",
-                 body: "The pipeline completed successfully.\nJob: ${JOB_NAME}\nBuild: ${BUILD_NUMBER}\nURL: ${BUILD_URL}"
-        }
-
-        failure {
-            mail to: 'ankit@example.com',
-                 subject: "Jenkins pipeline FAILED: ${JOB_NAME} #${BUILD_NUMBER}",
-                 body: "The pipeline failed.\nJob: ${JOB_NAME}\nBuild: ${BUILD_NUMBER}\nURL: ${BUILD_URL}"
-        }
-    }
-}
->>>>>>> 1c52d8d (First Commit)
