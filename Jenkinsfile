@@ -235,7 +235,7 @@ pipeline {
             echo '======================================'
 
             mail(
-                to: 'YOUR_EMAIL@example.com',
+                to: 'lambhate.ankit@gmail.com',
                 subject: "SUCCESS: Flask Pipeline #${BUILD_NUMBER}",
                 body: """
 Flask CI/CD Pipeline completed successfully.
@@ -268,7 +268,7 @@ Application has been deployed successfully.
             '''
 
             mail(
-                to: 'YOUR_EMAIL@example.com',
+                to: 'lambhate.ankit@gmail.com',
                 subject: "FAILED: Flask Pipeline #${BUILD_NUMBER}",
                 body: """
 Flask CI/CD Pipeline failed.
