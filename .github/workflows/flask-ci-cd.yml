@@ -27,7 +27,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      MONGO_URI: mongodb://localhost:27017/test_student_db
+      MONGO_URI: ${{ secrets.TEST_MONGO_URI }}
       SECRET_KEY: ci-only-not-used-for-deployment
     steps:
       - uses: actions/checkout@v4
