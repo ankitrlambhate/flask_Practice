@@ -1,124 +1,122 @@
-name: Flask Application CI/CD
+name: Flask Github Actions CI/CD Pipeline
 
 on:
   push:
     branches: [main, staging]
+    tags: ["v*"]
   pull_request:
     branches: [main, staging]
-  release:
-    types: [published]
-  workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
-  test:
-    name: Install dependencies and run tests
+  install:
+    name: Install dependencies
     runs-on: ubuntu-latest
-    env:
-      MONGO_URI: ${{ secrets.TEST_MONGO_URI }}
-      SECRET_KEY: ci-only-not-used-for-deployment
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+      - run: pip install -r requirements.txt
 
-      - name: Check MongoDB URI is configured
-        run: |
-          python -c "import os; uri = os.getenv('MONGO_URI', ''); assert uri.startswith(('mongodb://', 'mongodb+srv://')), 'TEST_MONGO_URI is missing or has an invalid scheme'"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-
-      - name: Run tests
-        run: python -m pytest -q
+  test:
+    name: Run tests
+    needs: install
+    runs-on: ubuntu-latest
+    env:
+      MONGO_URI: ${{ secrets.TEST_MONGO_URI }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest test_app.py -v
 
   build:
-    name: Build application package
+    name: Build
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Package application
-        run: tar -czf flask-practice.tar.gz app.py templates requirements.txt
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/checkout@v4
+      - run: tar -czf app.tar.gz app.py requirements.txt templates
+      - uses: actions/upload-artifact@v4
         with:
-          name: flask-practice
-          path: flask-practice.tar.gz
-          if-no-files-found: error
-          retention-days: 5
+          name: app
+          path: app.tar.gz
 
-  deploy:
-    name: Deploy application
+  deploy-staging:
+    name: Deploy to Staging
     needs: build
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
-      (github.event_name == 'release' && github.event.action == 'published')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'release' && 'production' || 'staging' }}
-    concurrency:
-      group: deploy-${{ github.event_name == 'release' && 'production' || 'staging' }}
-      cancel-in-progress: false
+    environment: staging
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      APP_DIR: flask_app_staging
+      APP_PORT: "5000"
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: flask-practice
-
-      - name: Configure SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SSH_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+          name: app
+      - name: Deploy over SSH
         run: |
-          test -n "$SSH_PRIVATE_KEY" || { echo "DEPLOY_SSH_KEY is missing"; exit 1; }
-          test -n "$SSH_KNOWN_HOSTS" || { echo "DEPLOY_KNOWN_HOSTS variable is missing"; exit 1; }
-          mkdir -p "$HOME/.ssh"
-          chmod 700 "$HOME/.ssh"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
+          install -m 600 /dev/null key
+          printf '%s\n' "$SSH_PRIVATE_KEY" > key
+          SSH=(-i key -o StrictHostKeyChecking=accept-new)
+          # shellcheck disable=SC2029  # APP_DIR is meant to expand here
+          printf "MONGO_URI='%s'\nSECRET_KEY='%s'\n" "$MONGO_URI" "$SECRET_KEY" \
+            | ssh "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p $APP_DIR && cat > $APP_DIR/.env"
+          scp "${SSH[@]}" app.tar.gz "$SSH_USER@$SSH_HOST:$APP_DIR/"
+          ssh "${SSH[@]}" "$SSH_USER@$SSH_HOST" bash -s -- "$APP_DIR" "$APP_PORT" <<'EOF'
+          set -e
+          cd "$1"
+          tar -xzf app.tar.gz
+          [ -d venv ] || python3 -m venv venv
+          venv/bin/pip install -q -r requirements.txt gunicorn
+          if [ -f app.pid ]; then kill "$(cat app.pid)" 2>/dev/null || true; sleep 2; fi
+          venv/bin/gunicorn --daemon --pid app.pid -b "0.0.0.0:$2" app:app
+          EOF
 
-      - name: Copy app and restart service
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          RELEASE_ID: ${{ github.sha }}
+  deploy-production:
+    name: Deploy to Production
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      MONGO_URI: ${{ secrets.MONGO_URI }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      APP_DIR: flask_app_production
+      APP_PORT: "8000"
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: app
+      - name: Deploy over SSH
         run: |
-          test -n "$DEPLOY_HOST" || { echo "DEPLOY_HOST is missing"; exit 1; }
-          test -n "$DEPLOY_USER" || { echo "DEPLOY_USER is missing"; exit 1; }
-
-          ssh_options=(-i "$HOME/.ssh/deploy_key" -o IdentitiesOnly=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes)
-
-          scp "${ssh_options[@]}" flask-practice.tar.gz \
-            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/flask-practice-$RELEASE_ID.tar.gz"
-
-          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "bash -s -- '$RELEASE_ID'" <<'REMOTE'
-          set -euo pipefail
-
-          release_id="$1"
-          app_root="/opt/flask-practice"
-          release_dir="$app_root/releases/$release_id"
-
-          mkdir -p "$release_dir"
-          tar -xzf "/tmp/flask-practice-$release_id.tar.gz" -C "$release_dir"
-          python3 -m venv "$release_dir/.venv"
-          "$release_dir/.venv/bin/pip" install -r "$release_dir/requirements.txt" gunicorn
-
-          ln -sfn "$release_dir" "$app_root/current"
-          sudo systemctl restart flask-practice
-          sudo systemctl is-active --quiet flask-practice
-
-          rm -f "/tmp/flask-practice-$release_id.tar.gz"
-          REMOTE
+          install -m 600 /dev/null key
+          printf '%s\n' "$SSH_PRIVATE_KEY" > key
+          SSH=(-i key -o StrictHostKeyChecking=accept-new)
+          # shellcheck disable=SC2029  # APP_DIR is meant to expand here
+          printf "MONGO_URI='%s'\nSECRET_KEY='%s'\n" "$MONGO_URI" "$SECRET_KEY" \
+            | ssh "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p $APP_DIR && cat > $APP_DIR/.env"
+          scp "${SSH[@]}" app.tar.gz "$SSH_USER@$SSH_HOST:$APP_DIR/"
+          ssh "${SSH[@]}" "$SSH_USER@$SSH_HOST" bash -s -- "$APP_DIR" "$APP_PORT" <<'EOF'
+          set -e
+          cd "$1"
+          tar -xzf app.tar.gz
+          [ -d venv ] || python3 -m venv venv
+          venv/bin/pip install -q -r requirements.txt gunicorn
+          if [ -f app.pid ]; then kill "$(cat app.pid)" 2>/dev/null || true; sleep 2; fi
+          venv/bin/gunicorn --daemon --pid app.pid -b "0.0.0.0:$2" app:app
+          EOF
