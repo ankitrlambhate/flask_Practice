@@ -57,7 +57,7 @@ jobs:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      MONGO_URI: ${{ secrets.MONGO_URI }}
+      MONGO_URI: ${{ secrets.TEST_MONGO_URI }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       APP_DIR: flask_app_staging
       APP_PORT: "5000"
@@ -71,7 +71,7 @@ jobs:
           printf '%s\n' "$SSH_PRIVATE_KEY" > key
           SSH=(-i key -o StrictHostKeyChecking=accept-new)
           # shellcheck disable=SC2029  # APP_DIR is meant to expand here
-          printf "MONGO_URI='%s'\nSECRET_KEY='%s'\n" "$MONGO_URI" "$SECRET_KEY" \
+          printf "MONGO_URI='%s'\nSECRET_KEY='%s'\n" "$TEST_MONGO_URI" "$SECRET_KEY" \
             | ssh "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p $APP_DIR && cat > $APP_DIR/.env"
           scp "${SSH[@]}" app.tar.gz "$SSH_USER@$SSH_HOST:$APP_DIR/"
           ssh "${SSH[@]}" "$SSH_USER@$SSH_HOST" bash -s -- "$APP_DIR" "$APP_PORT" <<'EOF'
@@ -108,7 +108,7 @@ jobs:
           printf '%s\n' "$SSH_PRIVATE_KEY" > key
           SSH=(-i key -o StrictHostKeyChecking=accept-new)
           # shellcheck disable=SC2029  # APP_DIR is meant to expand here
-          printf "MONGO_URI='%s'\nSECRET_KEY='%s'\n" "$MONGO_URI" "$SECRET_KEY" \
+          printf "MONGO_URI='%s'\nSECRET_KEY='%s'\n" "$TEST_MONGO_URI" "$SECRET_KEY" \
             | ssh "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p $APP_DIR && cat > $APP_DIR/.env"
           scp "${SSH[@]}" app.tar.gz "$SSH_USER@$SSH_HOST:$APP_DIR/"
           ssh "${SSH[@]}" "$SSH_USER@$SSH_HOST" bash -s -- "$APP_DIR" "$APP_PORT" <<'EOF'
