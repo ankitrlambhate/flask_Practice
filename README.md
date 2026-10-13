@@ -95,26 +95,6 @@ project/
 
 ---
 
-## Screenshots
-
-**Home Page**
-Lists all students with Edit/Delete buttons.
-- <img width="1902" height="607" alt="image" src="https://github.com/user-attachments/assets/a58a6a6d-4978-4769-8074-232e4d31e69d" />
-
-
-**Add Student**
-Form to add a new student.
-- <img width="1897" height="801" alt="image" src="https://github.com/user-attachments/assets/d65d25c3-ebb5-410a-adb1-e130ad7c5878" />
-
-
-**Update Student**
-Form pre-filled with student details.
-- <img width="1905" height="897" alt="image" src="https://github.com/user-attachments/assets/04febf01-879f-431f-ab07-abcfb993acf1" />
-
-
-
----
-
 ## Jenkins CI/CD Pipeline
 
 This repository includes a Jenkins pipeline for running a build, unit tests, and a staging deployment whenever code is pushed to the `main` branch.
